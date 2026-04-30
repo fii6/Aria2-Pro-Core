@@ -150,5 +150,10 @@ ARIA2_BUILD() {
         --disable-shared \
         --disable-nls \
         ac_cv_func_clock_gettime=yes
+    # Bionic folds pthread + clock_gettime into libc, and the NDK ships no
+    # libpthread.so / librt.so. autoconf still emits -lpthread / -lrt because
+    # configure picks them up on the host probes; strip them out of every
+    # generated Makefile before linking aria2c.
+    find . -name Makefile -exec sed -i 's/-lpthread\b//g; s/-lrt\b//g' {} +
     make -j$(nproc)
 }

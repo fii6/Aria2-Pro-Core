@@ -1,0 +1,31 @@
+From: Aria2-Pro-Core <noreply@example.com>
+Date: Thu, 30 Apr 2026 00:00:00 +0000
+Subject: [PATCH] Platform: make OpenSSL 'legacy' provider load non-fatal
+
+OpenSSL 3.x ships the legacy provider as a separate dynamically loaded
+module (legacy.so). Fully-static aria2c builds do not bundle that
+module, so OSSL_PROVIDER_load(NULL, "legacy") fails at startup and
+aria2c aborts before it can run.
+
+aria2 only needs the legacy provider for RC4 (some BitTorrent message
+stream encryption peers). Treat its absence as a soft failure: continue
+without it. The default provider remains required.
+
+---
+ src/Platform.cc | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/src/Platform.cc b/src/Platform.cc
+--- a/src/Platform.cc
++++ b/src/Platform.cc
+@@ -122,5 +122,9 @@
+   // RC4 is in the legacy provider.
+   legacy_provider_ = OSSL_PROVIDER_load(nullptr, "legacy");
+   if (!legacy_provider_) {
+-    throw DL_ABORT_EX("OSSL_PROVIDER_load 'legacy' failed.");
++    // OpenSSL ships the legacy provider as a separate dynamic module
++    // (legacy.so). Fully-static aria2c builds do not bundle it, so
++    // the load fails at startup. The legacy provider is only required
++    // for RC4 (a few BitTorrent peers); continue without it instead
++    // of aborting the whole binary.
+   }
