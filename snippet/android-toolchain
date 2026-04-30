@@ -1,0 +1,53 @@
+#
+# Copyright (c) 2020 P3TERX <https://p3terx.com>
+#
+# This is free software, licensed under the GNU General Public License v3.
+# See /LICENSE for more information.
+#
+# https://github.com/P3TERX/Aria2-Pro-Core
+# File name: snippet/android-toolchain
+#
+# Installs build prerequisites + downloads the Android NDK and exports the
+# toolchain variables consumed by snippet/android-build. Sourced by the
+# Android cross-build entrypoint scripts; does not run on its own.
+#
+
+DEBIAN_INSTALL() {
+    $SUDO apt-get update
+    $SUDO apt-get -y install build-essential git curl ca-certificates unzip xz-utils \
+        autoconf automake autotools-dev autopoint libtool pkg-config python3 dpkg-dev
+}
+
+FEDORA_INSTALL() {
+    $SUDO dnf install -y make gcc gcc-c++ kernel-devel git curl ca-certificates bzip2 xz unzip findutils \
+        autoconf automake gettext-devel libtool pkg-config python3 dpkg
+}
+
+ARCH_INSTALL() {
+    $SUDO pacman -Syu --noconfirm base-devel git curl unzip dpkg python
+}
+
+NDK_INSTALL() {
+    if [ -x "$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/$NDK_TARGET-clang" ]; then
+        echo "NDK already present at $NDK_ROOT, skipping download."
+        return 0
+    fi
+    mkdir -p "$NDK_PARENT"
+    cd "$NDK_PARENT"
+    local zip_path="$NDK_PARENT/ndk.zip"
+    echo "Downloading Android NDK from $ANDROID_NDK ..."
+    curl -fsSL -o "$zip_path" "$ANDROID_NDK"
+    unzip -q "$zip_path"
+    rm -f "$zip_path"
+    # Resolve the extracted directory name (android-ndk-rXX[c]) and symlink to a stable path.
+    local extracted
+    extracted=$(find "$NDK_PARENT" -maxdepth 1 -type d -name 'android-ndk-r*' | head -1)
+    if [ -z "$extracted" ]; then
+        echo "Failed to locate extracted NDK directory under $NDK_PARENT" >&2
+        exit 1
+    fi
+    if [ "$extracted" != "$NDK_ROOT" ]; then
+        rm -rf "$NDK_ROOT"
+        ln -sfn "$extracted" "$NDK_ROOT"
+    fi
+}

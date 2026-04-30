@@ -5,13 +5,18 @@
 # See /LICENSE for more information.
 #
 # https://github.com/P3TERX/Aria2-Pro-Core
-# File name: snippet/target-build
+# File name: snippet/android-build
+#
+# Build helpers that drive the Android NDK toolchain (clang/llvm). Mirrors the
+# Linux cross-build helpers but uses NDK target triples and Android-specific
+# OpenSSL / autotools knobs. Sourced from aria2-android-cross-build-*.sh.
 #
 
 ZLIB_BUILD() {
     mkdir -p $BUILD_DIR/zlib && cd $BUILD_DIR/zlib
     curl -Ls -o - "$ZLIB" | tar zxvf - --strip-components=1
-    ./configure \
+    # zlib's ./configure does not honour --host; CC/AR/RANLIB env vars steer it.
+    CHOST=$HOST ./configure \
         --prefix=$PREFIX \
         --static
     make -j$(nproc)
@@ -22,6 +27,8 @@ EXPAT_BUILD() {
     mkdir -p $BUILD_DIR/expat && cd $BUILD_DIR/expat
     curl -Ls -o - "$EXPAT" | tar jxvf - --strip-components=1
     ./configure \
+        --host=$HOST \
+        --build=$BUILD_HOST \
         --prefix=$PREFIX \
         --enable-static \
         --disable-shared \
@@ -36,6 +43,8 @@ C_ARES_BUILD() {
     mkdir -p $BUILD_DIR/c-ares && cd $BUILD_DIR/c-ares
     curl -Ls -o - "$C_ARES" | tar zxvf - --strip-components=1
     ./configure \
+        --host=$HOST \
+        --build=$BUILD_HOST \
         --prefix=$PREFIX \
         --enable-static \
         --disable-shared \
@@ -47,25 +56,40 @@ C_ARES_BUILD() {
 OPENSSL_BUILD() {
     mkdir -p $BUILD_DIR/openssl && cd $BUILD_DIR/openssl
     curl -Ls -o - "$OPENSSL" | tar zxvf - --strip-components=1
-    ./Configure \
-        --prefix=$PREFIX \
-        --libdir=lib \
-        $OPENSSL_ARCH \
-        no-shared \
-        no-tests \
-        no-docs
-    make -j$(nproc)
-    make install_sw
+    # Reset CC/AR/etc. for OpenSSL: its Configure target injects the right NDK
+    # prefix on its own, so we don't want to fight it with our exports.
+    env -u CC -u CXX -u AR -u AS -u LD -u RANLIB -u STRIP -u CPP \
+        ANDROID_NDK_ROOT="$NDK_ROOT" \
+        PATH="$NDK_TOOLCHAIN/bin:$PATH" \
+        ./Configure \
+            $OPENSSL_ARCH \
+            -D__ANDROID_API__=$ANDROID_API \
+            --prefix=$PREFIX \
+            --openssldir=$PREFIX/ssl \
+            no-shared \
+            no-tests \
+            no-asm
+    env -u CC -u CXX -u AR -u AS -u LD -u RANLIB -u STRIP -u CPP \
+        ANDROID_NDK_ROOT="$NDK_ROOT" \
+        PATH="$NDK_TOOLCHAIN/bin:$PATH" \
+        make -j$(nproc)
+    env -u CC -u CXX -u AR -u AS -u LD -u RANLIB -u STRIP -u CPP \
+        ANDROID_NDK_ROOT="$NDK_ROOT" \
+        PATH="$NDK_TOOLCHAIN/bin:$PATH" \
+        make install_sw
 }
 
 SQLITE3_BUILD() {
     mkdir -p $BUILD_DIR/sqlite3 && cd $BUILD_DIR/sqlite3
     curl -Ls -o - "$SQLITE3" | tar zxvf - --strip-components=1
     ./configure \
+        --host=$HOST \
+        --build=$BUILD_HOST \
         --prefix=$PREFIX \
         --enable-static \
         --disable-shared \
-        --disable-dynamic-extensions
+        --disable-dynamic-extensions \
+        --disable-readline
     make -j$(nproc)
     make install
 }
@@ -74,10 +98,14 @@ LIBSSH2_BUILD() {
     mkdir -p $BUILD_DIR/libssh2 && cd $BUILD_DIR/libssh2
     curl -Ls -o - "$LIBSSH2" | tar zxvf - --strip-components=1
     ./configure \
+        --host=$HOST \
+        --build=$BUILD_HOST \
         --prefix=$PREFIX \
         --enable-static \
         --disable-shared \
-        --disable-examples-build
+        --disable-examples-build \
+        --with-crypto=openssl \
+        --with-libssl-prefix=$PREFIX
     make -j$(nproc)
     make install
 }
@@ -86,6 +114,8 @@ JEMALLOC_BUILD() {
     mkdir -p $BUILD_DIR/jemalloc && cd $BUILD_DIR/jemalloc
     curl -Ls -o - "$JEMALLOC" | tar jxvf - --strip-components=1
     ./configure \
+        --host=$HOST \
+        --build=$BUILD_HOST \
         --prefix=$PREFIX \
         --enable-static \
         --disable-shared \
@@ -97,8 +127,12 @@ JEMALLOC_BUILD() {
 
 ARIA2_BUILD() {
     ARIA2_CODE_GET
+    # Android has no /etc/ssl/certs; aria2 should accept --ca-certificate at
+    # runtime or use the Termux/Android system store the user points it at.
     ./configure \
-        --prefix=${ARIA2_PREFIX:-'/usr/loacl'} \
+        --host=$HOST \
+        --build=$BUILD_HOST \
+        --prefix=${ARIA2_PREFIX:-'/data/data/com.termux/files/usr'} \
         --with-libz \
         --with-libcares \
         --with-libexpat \
@@ -111,8 +145,10 @@ ARIA2_BUILD() {
         --with-libssh2 \
         --with-sqlite3 \
         --without-jemalloc \
-        --with-ca-bundle='/etc/ssl/certs/ca-certificates.crt' \
+        --without-ca-bundle \
         ARIA2_STATIC=yes \
-        --disable-shared
+        --disable-shared \
+        --disable-nls \
+        ac_cv_func_clock_gettime=yes
     make -j$(nproc)
 }

@@ -20,11 +20,11 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        PLATFORMS: [amd64, arm64, armhf, i386]
+        PLATFORMS: [amd64, arm64, armhf, i386, android-arm64]
         include:
         - PLATFORMS: amd64
           BUILDER_IMAGE: debian:11
@@ -38,14 +38,18 @@ jobs:
         - PLATFORMS: i386
           BUILDER_IMAGE: debian:10
           BUILD_SCRIPT: aria2-gnu-linux-cross-build-i386.sh
+        - PLATFORMS: android-arm64
+          BUILDER_IMAGE: ubuntu:22.04
+          BUILD_SCRIPT: aria2-android-cross-build-arm64.sh
 
     steps:
 
     - name: Install QEMU
+      if: matrix.PLATFORMS != 'android-arm64'
       run: docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
 
     - name: Checkout
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
 
     - name: Build
       env:
@@ -62,21 +66,25 @@ jobs:
 
     - name: Output Error Log
       if: (!cancelled())
-      run: grep -iE 'fatal|error|critical|failure|warning' build.log
+      run: grep -iE 'fatal|error|critical|failure|warning' build.log || true
 
-    - name: Check Version
+    - name: Check Binary
       run: |
         tar xzvf ./output/aria2*.tar.gz
         file aria2c 2>&1 | tee ./output/file-type-${{ matrix.PLATFORMS }}.txt
-        ./aria2c -v 2>&1 | tee ./output/version-${{ matrix.PLATFORMS }}.txt
+
+    - name: Check Version
+      if: matrix.PLATFORMS != 'android-arm64'
+      run: ./aria2c -v 2>&1 | tee ./output/version-${{ matrix.PLATFORMS }}.txt
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: aria2-${{ matrix.PLATFORMS }}
         path: output
 
     - name: Functional Testing
+      if: matrix.PLATFORMS != 'android-arm64'
       run: |
         ./aria2c https://raw.githubusercontent.com/P3TERX/aria2.conf/master/dht.dat
         ./aria2c https://raw.githubusercontent.com/P3TERX/aria2.conf/master/dht6.dat
