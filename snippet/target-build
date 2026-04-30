@@ -65,7 +65,7 @@ SQLITE3_BUILD() {
         --prefix=$PREFIX \
         --enable-static \
         --disable-shared \
-        --disable-dynamic-extensions
+        --disable-load-extension
     make -j$(nproc)
     make install
 }
