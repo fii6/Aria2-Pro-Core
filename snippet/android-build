@@ -127,6 +127,20 @@ JEMALLOC_BUILD() {
 
 ARIA2_BUILD() {
     ARIA2_CODE_GET
+    # Bionic on ARM64 (Android 10+) requires PT_TLS p_align >= 64; otherwise
+    # the dynamic linker aborts with:
+    #   "executable's TLS segment is underaligned: alignment is 8 ..."
+    # Inject a 64-byte aligned thread_local variable directly into a source
+    # file that always links into aria2c, so lld is forced to emit p_align=64
+    # regardless of LDFLAGS / libtool filtering.
+    if [ -f src/main.cc ] && ! grep -q '__aria2_tls_align' src/main.cc; then
+        cat >> src/main.cc <<'EOF'
+
+// Force PT_TLS p_align >= 64 for Android Bionic ARM64 dynamic linker.
+alignas(64) thread_local char __aria2_tls_align[64] __attribute__((used)) = {};
+EOF
+    fi
+
     # Android has no /etc/ssl/certs; aria2 should accept --ca-certificate at
     # runtime or use the Termux/Android system store the user points it at.
     ./configure \
